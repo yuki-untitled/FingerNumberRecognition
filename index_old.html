@@ -8,62 +8,24 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 <style>
-body{font-family:system-ui,sans-serif;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;text-align:center;margin:0;padding:1rem;min-height:100vh;}
-.container{max-width:800px;margin:0 auto;background:rgba(255,255,255,0.1);border-radius:20px;padding:2rem;backdrop-filter:blur(10px);}
-canvas{border:2px solid rgba(255,255,255,0.3);border-radius:15px;max-width:100%;height:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);}
-button,input{margin:0.5rem;padding:0.8rem 1.5rem;font-size:1rem;border:none;border-radius:10px;cursor:pointer;transition:all 0.3s ease;}
-button{background:linear-gradient(45deg, #ff6b6b, #ee5a24);color:white;font-weight:bold;}
-button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 5px 15px rgba(0,0,0,0.3);}
-button:disabled{background:#ccc;cursor:not-allowed;transform:none;}
-input[type="file"]{background:rgba(255,255,255,0.2);color:white;padding:0.5rem;}
-#prob{font-weight:bold;font-size:2rem;color:#ffd700;text-shadow:2px 2px 4px rgba(0,0,0,0.5);margin:1rem 0;padding:1rem;background:rgba(0,0,0,0.2);border-radius:15px;}
-#status{font-size:1rem;color:#a8e6cf;margin:0.5rem;}
-h2{margin:1rem 0;font-size:2.5rem;text-shadow:2px 2px 4px rgba(0,0,0,0.5);}
-p{margin:1rem 0;font-size:1.1rem;opacity:0.9;}
-.info-panel{background:rgba(255,255,255,0.1);border-radius:10px;padding:1rem;margin:1rem 0;text-align:left;}
+body{font-family:system-ui,sans-serif;background:#f3f4f6;text-align:center;margin:0;padding:1rem;}
+canvas{border:1px solid #999;border-radius:8px;max-width:100%;height:auto;}
+button,input{margin:0.3rem;padding:0.5rem 1rem;font-size:1rem;}
+#prob{font-weight:bold;font-size:1.25rem;color:#16a34a;}
+h2,p{margin:0.5rem;}
 </style>
 </head>
 <body>
-<div class="container">
-<h2>🤟 リアルタイム指文字認識システム</h2>
-<p>数字 1-9 の指文字を認識します。左手・右手どちらでも対応！</p>
+<h2>リアルタイム指文字認識（数字1-9）- 演習ファイル</h2>
+<p>TODOの部分を実装して、指文字認識を完成させよう！</p>
 
-<div class="info-panel">
-  <h3>📋 使い方</h3>
-  <ol style="text-align:left;">
-    <li>下のボタンからモデルファイル（JSON）を選択</li>
-    <li>「認識開始」ボタンをクリック</li>
-    <li>カメラに向かって指文字を表示</li>
-    <li>認識結果が下に表示されます</li>
-  </ol>
-</div>
-
-<label style="display:block;margin:1rem 0;">
-  🤖 モデルファイル (JSON): 
-  <input type="file" id="modelFile" accept=".json">
-</label>
-
-<div style="margin:1rem 0;">
-  <button id="start">🚀 認識開始</button>
-  <button id="stop" disabled>⏹️ 停止</button>
-</div>
-
-<div id="status">モデルを読み込んでください</div>
+<label>モデル(JSON): <input type="file" id="modelFile"></label>
+<button id="start">Start</button>
+<button id="stop" disabled>Stop</button>
 <div id="prob">–</div>
 
 <video id="input" style="display:none;"></video>
 <canvas id="output" width="640" height="480"></canvas>
-
-<div class="info-panel" style="margin-top:2rem;">
-  <h3>💡 認識のコツ</h3>
-  <ul style="text-align:left;">
-    <li>手をカメラの中央に配置してください</li>
-    <li>指の形をはっきりと見せてください</li>
-    <li>背景はシンプルなものが良いです</li>
-    <li>適度な明るさの環境で使用してください</li>
-  </ul>
-</div>
-</div>
 
 <script>
 // --- このファイルは、学生が編集しやすいように主要な関数や変数のみを記載しています ---
@@ -74,24 +36,17 @@ const ctx = canvas.getContext('2d');
 const startBtn = document.getElementById('start');
 const stopBtn  = document.getElementById('stop');
 const probDiv  = document.getElementById('prob');
-const statusDiv = document.getElementById('status');
 let modelCoef, modelIntercept, classLabels, scMean, scScale;
 let modelLoaded = false, sending = false; 
 
 // --- モデル読み込み、softmax, predict関数 (この部分は完成形で提供) ---
 document.getElementById('modelFile').addEventListener('change', e=>{
   const file = e.target.files[0]; if(!file) return;
-  statusDiv.textContent = 'モデルを読み込み中...';
   file.text().then(txt=>{
     const obj = JSON.parse(txt);
     modelCoef = obj.coef; modelIntercept = obj.intercept; classLabels = obj.labels;
     scMean  = obj.mean; scScale = obj.scale; modelLoaded = true;
-    startBtn.disabled = false; 
-    statusDiv.textContent = '✅ モデル読み込み完了！認識を開始できます';
-    alert('🎉 モデルを読み込みました！');
-  }).catch(err => {
-    statusDiv.textContent = '❌ モデルの読み込みに失敗しました';
-    console.error('Model loading error:', err);
+    startBtn.disabled = false; alert('モデルを読み込みました！');
   });
 });
 function softmax(arr){
@@ -124,13 +79,7 @@ hands.onResults(res => {
 
   /* ---------- 1. 21点ランドマーク取得 (ここは完成形で提供) ---------- */
   const lmRaw = res.multiHandLandmarks[0];
-  let lm = lmRaw.map(p => [p.x, p.y]);
-
-  // 左手対応：左手の場合はx座標を反転して右手として扱う
-  const handedness = res.multiHandedness?.[0]?.label;
-  if (handedness === 'Left') {
-    lm = lm.map(point => [1 - point[0], point[1]]);
-  }
+  const lm    = lmRaw.map(p => [p.x, p.y]);
 
 
   /*
@@ -146,25 +95,49 @@ hands.onResults(res => {
   // Pythonコード: lm -= wrist
   const wrist = [...lm[0]]; // 重要なコピー処理は予め記述しておきます
 
-  // JavaScriptらしい実装：mapを使用
-  lm.forEach((point, i) => {
-    lm[i] = [point[0] - wrist[0], point[1] - wrist[1]];
-  });
+  for(let i = 0; i < lm.length; i++){
+    // TODO-1: lm[i] の x座標(0番目) と y座標(1番目) から、手首(wrist)の座標を引こう
+    // ヒント: lm[i][0] = lm[i][0] - wrist[0]; のように書きます
+    
+    // ===== ここにコードを書いてください (2行) =====
+    lm[i][0] = lm[i][0] - wrist[0];
+    lm[i][1] = lm[i][1] - wrist[1];
+
+    // ===========================================
+  }
 
   /* ---------- 3. スケール正規化（大きさの正規化）---------- */
   // 目的: 手の大きさ（カメラとの距離）が違っても同じ特徴が得られるようにするため
   // Pythonコード: norm = np.linalg.norm(lm, axis=1).max(); lm /= norm
 
-  // ステップA: 各点と原点(手首)との距離を計算する（JavaScriptらしい実装）
-  const distances = lm.map(point => Math.hypot(point[0], point[1]));
+  // ステップA: 各点と原点(手首)との距離を計算する
+  let distances = [];
+  for(let i = 0; i < lm.length; i++){
+    const point = lm[i];
+    // TODO-2: pointのx座標とy座標から、原点(0,0)との距離を計算して、distances配列に追加しよう
+    // ヒント: 距離は Math.hypot(x, y) で計算できます
+    //       distances.push(計算した距離); のように書きます
+
+    // ===== ここにコードを書いてください (1~2行) =====
+    const distance = Math.hypot(point[0], point[1]);
+    distances.push(distance);
+
+    // ============================================
+  }
   
   // ステップB: 距離の最大値を見つける（ここは完成形で提供）
   const norm = Math.max(...distances) || 1; // 距離が0の時のエラーを防ぐため || 1 を付けます
 
-  // ステップC: 全ての座標を、距離の最大値(norm)で割る（JavaScriptらしい実装）
-  lm.forEach((point, i) => {
-    lm[i] = [point[0] / norm, point[1] / norm];
-  });
+  // ステップC: 全ての座標を、距離の最大値(norm)で割る
+  for(let i = 0; i < lm.length; i++){
+    // TODO-3: lm[i] の x座標と y座標を、それぞれ norm で割ろう
+
+    // ===== ここにコードを書いてください (2行) =====
+    lm[i][0] = lm[i][0] / norm;
+    lm[i][1] = lm[i][1] / norm;
+
+    // ============================================
+  }
 
   /* * ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
    * 実装はここまで！
