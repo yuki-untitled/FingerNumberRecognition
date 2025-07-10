@@ -1,4 +1,4 @@
-# MediaPipe Hand Landmarker サンプルの使い方
+# FingerNumberRecognition サンプルの使い方
 
 情報保障システム工学・演習 第12回「機械学習の活用」で使用したソースコード一式を公開します。
 このプロジェクトは、あらかじめ作成したmodel_meta.jsonを読み込むことでWebカメラから指文字を認識するものです。  
