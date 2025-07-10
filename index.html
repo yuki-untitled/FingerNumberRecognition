@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>演習ファイル：リアルタイム指文字認識</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<style>
+body{font-family:system-ui,sans-serif;background:#f3f4f6;text-align:center;margin:0;padding:1rem;}
+canvas{border:1px solid #999;border-radius:8px;max-width:100%;height:auto;}
+button,input{margin:0.3rem;padding:0.5rem 1rem;font-size:1rem;}
+#prob{font-weight:bold;font-size:1.25rem;color:#16a34a;}
+h2,p{margin:0.5rem;}
+</style>
+</head>
+<body>
+<h2>リアルタイム指文字認識（数字1-9）- 演習ファイル</h2>
+<p>TODOの部分を実装して、指文字認識を完成させよう！</p>
+
+<label>モデル(JSON): <input type="file" id="modelFile"></label>
+<button id="start">Start</button>
+<button id="stop" disabled>Stop</button>
+<div id="prob">–</div>
+
+<video id="input" style="display:none;"></video>
+<canvas id="output" width="640" height="480"></canvas>
+
+<script>
+// --- このファイルは、学生が編集しやすいように主要な関数や変数のみを記載しています ---
+
+const video = document.getElementById('input');
+const canvas = document.getElementById('output');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('start');
+const stopBtn  = document.getElementById('stop');
+const probDiv  = document.getElementById('prob');
+let modelCoef, modelIntercept, classLabels, scMean, scScale;
+let modelLoaded = false, sending = false; 
+
+// --- モデル読み込み、softmax, predict関数 (この部分は完成形で提供) ---
+document.getElementById('modelFile').addEventListener('change', e=>{
+  const file = e.target.files[0]; if(!file) return;
+  file.text().then(txt=>{
+    const obj = JSON.parse(txt);
+    modelCoef = obj.coef; modelIntercept = obj.intercept; classLabels = obj.labels;
+    scMean  = obj.mean; scScale = obj.scale; modelLoaded = true;
+    startBtn.disabled = false; alert('モデルを読み込みました！');
+  });
+});
+function softmax(arr){
+  const ex = arr.map(Math.exp); const sum = ex.reduce((a,b)=>a+b); return ex.map(v=>v/sum);
+}
+function predict(vec){
+  const scores = modelCoef.map((w,i)=>{
+    let s = modelIntercept[i];
+    for(let j=0;j<w.length;j++){ s += w[j]*vec[j]; } return s;
+  });
+  const probs = softmax(scores); const maxIdx = probs.indexOf(Math.max(...probs));
+  return [classLabels[maxIdx], probs[maxIdx]];
+}
+
+// --- Mediapipe & カメラのセットアップ (この部分も完成形で提供) ---
+const hands = new Hands({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+const camera = new Camera(video,{
+  width:640,height:480,
+  onFrame: async ()=>{ if(sending) return; sending = true; await hands.send({image: video}); sending = false; }
+});
+
+/**
+ * Mediapipeが手のランドマークを検出したときに呼び出されるメインの処理
+ */
+hands.onResults(res => {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(res.image,0,0,canvas.width,canvas.height);
+  if (!modelLoaded || !res.multiHandLandmarks?.length) { probDiv.textContent = '–'; return; }
+
+  /* ---------- 1. 21点ランドマーク取得 (ここは完成形で提供) ---------- */
+  const lmRaw = res.multiHandLandmarks[0];
+  let lm = lmRaw.map(p => [p.x, p.y]);
+
+  // 左手対応：左手の場合はx座標を反転して右手として扱う
+  const handedness = res.multiHandedness?.[0]?.label;
+  if (handedness === 'Left') {
+    lm = lm.map(point => [1 - point[0], point[1]]);
+  }
+
+
+  /*
+   * =================================================================
+   * ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+   * 【課題】ここから下のデータ前処理を実装しよう！
+   * Pythonのノートブック(exp3_compare.ipynb)の `create_normalized_features` 関数を参考にしてください。
+   * ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+   */
+
+  /* ---------- 2. 手首を原点に移動（位置の正規化）---------- */
+  // 目的: 手が画面上のどこにあっても同じ特徴が得られるようにするため
+  // Pythonコード: lm -= wrist
+  const wrist = [...lm[0]]; // 重要なコピー処理は予め記述しておきます
+
+  // JavaScriptらしい実装：mapを使用
+  lm.forEach((point, i) => {
+    lm[i] = [point[0] - wrist[0], point[1] - wrist[1]];
+  });
+
+  /* ---------- 3. スケール正規化（大きさの正規化）---------- */
+  // 目的: 手の大きさ（カメラとの距離）が違っても同じ特徴が得られるようにするため
+  // Pythonコード: norm = np.linalg.norm(lm, axis=1).max(); lm /= norm
+
+  // ステップA: 各点と原点(手首)との距離を計算する（JavaScriptらしい実装）
+  const distances = lm.map(point => Math.hypot(point[0], point[1]));
+  
+  // ステップB: 距離の最大値を見つける（ここは完成形で提供）
+  const norm = Math.max(...distances) || 1; // 距離が0の時のエラーを防ぐため || 1 を付けます
+
+  // ステップC: 全ての座標を、距離の最大値(norm)で割る（JavaScriptらしい実装）
+  lm.forEach((point, i) => {
+    lm[i] = [point[0] / norm, point[1] / norm];
+  });
+
+  /* * ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+   * 実装はここまで！
+   * ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+   */
+
+
+  /* ---------- 4. ベクトル化、標準化、予測 (ここは完成形で提供) ---------- */
+  const vec = lm.flat();
+  const stdVec = vec.map((v,i) => (v - scMean[i]) / scScale[i]);
+  const [pred, prob] = predict(stdVec);
+  probDiv.textContent = `数字: ${pred}  (確信度 ${prob.toFixed(2)})`;
+
+  /* ---------- 5. 描画 (ここは完成形で提供) ---------- */
+  drawConnectors(ctx, lmRaw, HAND_CONNECTIONS, {color:'#22c55e', lineWidth:3});
+  drawLandmarks(ctx, lmRaw, {color:'#ef4444', radius:3});
+});
+
+// --- UI操作関連 (この部分も完成形で提供) ---
+startBtn.disabled = true;
+startBtn.onclick = ()=>{ 
+  if(!modelLoaded){ alert("先にモデルを読み込んで下さい"); return; }
+  camera.start(); startBtn.disabled=true; stopBtn.disabled=false;
+};
+stopBtn.onclick = ()=>{
+  camera.stop(); startBtn.disabled = false; stopBtn.disabled = true; probDiv.textContent = '–';
+};
+</script>
+</body>
+</html>
